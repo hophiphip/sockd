@@ -1,5 +1,4 @@
 # sockd
-=================
 
 ##  Alternative
 This is still incomplete implementation.
