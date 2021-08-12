@@ -1,23 +1,27 @@
 package main
 
 import (
+	"io"
 	"log"
 	"os"
 	"os/exec"
 )
 
 func main() {
-	cmd := exec.Command("cat")
+	cmd := exec.Command("ls", "-la")
 
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := cmd.Wait(); err != nil {
+	go io.Copy(os.Stdout, stdout)
+
+	if err = cmd.Start(); err != nil {
+		log.Fatal(err)
+	}
+
+	if err = cmd.Wait(); err != nil {
 		log.Fatal(err)
 	}
 }
