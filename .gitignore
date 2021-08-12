@@ -1,0 +1,4 @@
+sockd
+*.zip
+build
+build/
