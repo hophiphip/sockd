@@ -13,6 +13,7 @@ import (
 )
 
 const Port = ":8080"
+const Script = "./script.sh"
 
 type StreamType string
 
@@ -98,7 +99,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func Log(conn *websocket.Conn) {
-	ws, err := newProcess("./sub.sh")
+	ws, err := newProcess(Script)
 	if err != nil {
 		log.Fatal(err)
 	}
