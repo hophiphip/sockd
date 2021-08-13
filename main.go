@@ -16,7 +16,7 @@ import (
 
 var Address = flag.String("address", "127.0.0.1", "sockd service ip address")
 var Port = flag.Int("port", 8080, "sockd service port")
-var Script = flag.String("script", "./script.sh", "path to script or executable for sockd service to run")
+var Script = flag.String("script", "ls", "path to script or executable for sockd service to run")
 
 type StreamType string
 
@@ -88,6 +88,8 @@ func (ws *WsProcess) Wait() error {
 }
 
 func WsHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("WS: %s\n", r.Host)
+
 	if r.Header.Get("Origin") != "http://"+r.Host {
 		http.Error(w, "Incorrect host origin", 403)
 		return
@@ -120,11 +122,15 @@ func Log(conn *websocket.Conn) {
 		scanner := bufio.NewScanner(reader)
 
 		for scanner.Scan() {
+			// TODO: Sometimes writing stops earlier than needed
+			//		Need to set timeouts
 			if err = conn.WriteJSON(WsMessage{
 				Type: Stdout,
 				Arg:  fmt.Sprintf("[%s] %s\n", time.Now().Format(time.RFC850), scanner.Text()),
 			}); err != nil {
-				log.Println("Failed to send JSON")
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Printf("JSON Write error: %v\n", err)
+				}
 			}
 		}
 	}(reader)
@@ -240,6 +246,8 @@ var htmlTemplate = template.Must(template.New("").Parse(`
 `))
 
 func HtmlHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("HTMLM: %s\n", r.Host)
+
 	data := TemplatePageData{
 		Title:  "Sockd client",
 		WsHost: "ws://" + r.Host + "/ws",
