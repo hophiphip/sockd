@@ -2,18 +2,21 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os/exec"
+	"text/template"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-const Port = ":8080"
-const Script = "./script.sh"
+var Address = flag.String("address", "127.0.0.1", "sockd service ip address")
+var Port = flag.Int("port", 8080, "sockd service port")
+var Script = flag.String("script", "./script.sh", "path to script or executable for sockd service to run")
 
 type StreamType string
 
@@ -95,11 +98,13 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to open websocket connection", http.StatusBadRequest)
 	}
 
-	go Log(conn)
+	defer conn.Close()
+
+	Log(conn)
 }
 
 func Log(conn *websocket.Conn) {
-	ws, err := newProcess(Script)
+	ws, err := newProcess(*Script)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -109,6 +114,8 @@ func Log(conn *websocket.Conn) {
 	reader := bufio.NewReader(ws.Stdout)
 
 	// Handle stdout
+	//		Stdout -> sockd -> Browser -> Stdout
+	//
 	go func(reader io.Reader) {
 		scanner := bufio.NewScanner(reader)
 
@@ -123,13 +130,18 @@ func Log(conn *websocket.Conn) {
 	}(reader)
 
 	// Handle stdin
+	//		Stdin -> Browser -> sockd -> Stdin
+	//
 	go func() {
 		for {
 			message := WsMessage{}
 
 			err := conn.ReadJSON(&message)
 			if err != nil {
-				log.Println("Error parsing JSON: ", err)
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Printf("JSON Read error: %v", err)
+				}
+				break
 			}
 
 			if message.Type == Stdin {
@@ -137,7 +149,7 @@ func Log(conn *websocket.Conn) {
 
 				ws.Stdin.Write([]byte(message.Arg + "\n"))
 			} else {
-				log.Println("Wrong message type: ", message.Type)
+				log.Printf("Wrong message type: %s : Arg: %s", message.Type, message.Arg)
 			}
 		}
 	}()
@@ -152,19 +164,26 @@ func Log(conn *websocket.Conn) {
 }
 
 func main() {
+	flag.Parse()
+	log.SetFlags(0)
 
 	http.HandleFunc("/ws", WsHandler)
-	http.HandleFunc("/", serveHtml)
+	http.HandleFunc("/", HtmlHandler)
 
-	log.Printf("Starting server on %s\n", Port)
+	log.Printf("Starting server on %s:%d\n", *Address, *Port)
 
-	log.Fatal(http.ListenAndServe(Port, nil))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *Address, *Port), nil))
 }
 
-var html = []byte(`
+type TemplatePageData struct {
+	Title  string
+	WsHost string
+}
+
+var htmlTemplate = template.Must(template.New("").Parse(`
 <html>
 <head>
-    <title>WebSocket demo</title>
+    <title>{{.Title}}</title>
 </head>
 <body>
 
@@ -190,7 +209,7 @@ var html = []byte(`
             }
 
             function initWS() {
-                var socket = new WebSocket("ws://localhost:8080/ws"),
+                var socket = new WebSocket("{{.WsHost}}"),
                     container = $("#container")
                 socket.onopen = function() {
                     container.append("<p>Socket is open</p>");
@@ -218,8 +237,13 @@ var html = []byte(`
     </script>
 </body>
 </html>
-`)
+`))
 
-func serveHtml(w http.ResponseWriter, r *http.Request) {
-	w.Write(html)
+func HtmlHandler(w http.ResponseWriter, r *http.Request) {
+	data := TemplatePageData{
+		Title:  "Sockd client",
+		WsHost: "ws://" + r.Host + "/ws",
+	}
+
+	htmlTemplate.Execute(w, data)
 }
