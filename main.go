@@ -88,8 +88,6 @@ func (ws *WsProcess) Wait() error {
 }
 
 func WsHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("WS: %s\n", r.Host)
-
 	if r.Header.Get("Origin") != "http://"+r.Host {
 		http.Error(w, "Incorrect host origin", 403)
 		return
@@ -246,8 +244,6 @@ var htmlTemplate = template.Must(template.New("").Parse(`
 `))
 
 func HtmlHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("HTMLM: %s\n", r.Host)
-
 	data := TemplatePageData{
 		Title:  "Sockd client",
 		WsHost: "ws://" + r.Host + "/ws",
