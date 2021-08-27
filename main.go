@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	stdoutTimeout = 60 * time.Second
+	StdoutTimeout = 10 * time.Minute
 )
 
 var Address = flag.String("address", "127.0.0.1", "sockd service ip address")
