@@ -1,4 +1,5 @@
 # sockd
+Access program STDIN and STDOUT via Web-Socket server. 
 
 ##  Alternative
 This is still incomplete implementation.
