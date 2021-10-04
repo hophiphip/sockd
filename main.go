@@ -11,6 +11,8 @@ import (
 	"text/template"
 	"time"
 
+	_ "embed"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -18,9 +20,10 @@ const (
 	StdoutTimeout = 10 * time.Minute
 )
 
-var Address = flag.String("address", "127.0.0.1", "sockd service ip address")
-var Port = flag.Int("port", 8080, "sockd service port")
-var Script = flag.String("script", "ls", "path to script or executable for sockd service to run")
+type TemplatePageData struct {
+	Title  string
+	WsHost string
+}
 
 type StreamType string
 
@@ -42,6 +45,14 @@ type WsProcess struct {
 	Stdout io.ReadCloser
 	Stderr io.ReadCloser
 }
+
+var Address = flag.String("address", "127.0.0.1", "sockd service ip address")
+var Port = flag.Int("port", 8080, "sockd service port")
+var Script = flag.String("script", "ls", "path to script or executable for sockd service to run")
+
+//go:embed index.html
+var htmlContents string
+var htmlTemplate = template.Must(template.New("").Parse(htmlContents))
 
 func newProcess(command string, args ...string) (*WsProcess, error) {
 	cmd := exec.Command(command, args...)
@@ -91,6 +102,7 @@ func (ws *WsProcess) Wait() error {
 	}
 }
 
+// WsProcess - handles websocket connections
 func WsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") != "http://"+r.Host {
 		http.Error(w, "Incorrect host origin", 403)
@@ -107,6 +119,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	Log(conn)
 }
 
+// Log - Stdin/Stdout/Stderr websocket logger
 func Log(conn *websocket.Conn) {
 	ws, err := newProcess(*Script)
 	if err != nil {
@@ -118,7 +131,7 @@ func Log(conn *websocket.Conn) {
 	reader := bufio.NewReader(ws.Stdout)
 
 	// Stdout timeout
-	conn.SetReadDeadline(time.Now().Add(stdoutTimeout))
+	conn.SetReadDeadline(time.Now().Add(StdoutTimeout))
 
 	// Handle stdout
 	//		Stdout -> sockd -> Browser -> Stdout
@@ -172,6 +185,16 @@ func Log(conn *websocket.Conn) {
 	}
 }
 
+// HtmlHandler - sample websocket html client
+func HtmlHandler(w http.ResponseWriter, r *http.Request) {
+	data := TemplatePageData{
+		Title:  "Sockd client",
+		WsHost: "ws://" + r.Host + "/ws",
+	}
+
+	htmlTemplate.Execute(w, data)
+}
+
 func main() {
 	flag.Parse()
 	log.SetFlags(0)
@@ -182,77 +205,4 @@ func main() {
 	log.Printf("Starting server on %s:%d\n", *Address, *Port)
 
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *Address, *Port), nil))
-}
-
-type TemplatePageData struct {
-	Title  string
-	WsHost string
-}
-
-var htmlTemplate = template.Must(template.New("").Parse(`
-<html>
-<head>
-    <title>{{.Title}}</title>
-</head>
-<body>
-
-    <div>
-        <form>
-            <label for="stdin">Stdin</label>
-            <input type="text" id="stdinfield"/><br/>
-            <button type="button" id="sendBtn">Send</button>
-        </form>
-    </div>
-    <div id="container"></div>
-
-    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-    <script type="text/javascript">
-        $(function () {
-            var ws;
-
-            if (window.WebSocket === undefined) {
-                $("#container").append("Your browser does not support WebSockets");
-                return;
-            } else {
-                ws = initWS();
-            }
-
-            function initWS() {
-                var socket = new WebSocket("{{.WsHost}}"),
-                    container = $("#container")
-                socket.onopen = function() {
-                    container.append("<p>Socket is open</p>");
-                };
-                socket.onmessage = function (e) {
-										var parsed = JSON.parse(e.data)
-                    container.append("<p>" + parsed["arg"] + "</p>");
-                }
-                socket.onclose = function () {
-                    container.append("<p>Socket closed</p>");
-                }
-
-                return socket;
-            }
-
-            $("#sendBtn").click(function (e) {
-                e.preventDefault();
-
-                ws.send(JSON.stringify({
-										type: "stdin",
-										arg: $("#stdinfield").val(), 
-								}));
-            });
-        });
-    </script>
-</body>
-</html>
-`))
-
-func HtmlHandler(w http.ResponseWriter, r *http.Request) {
-	data := TemplatePageData{
-		Title:  "Sockd client",
-		WsHost: "ws://" + r.Host + "/ws",
-	}
-
-	htmlTemplate.Execute(w, data)
 }
